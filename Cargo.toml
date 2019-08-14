@@ -6,6 +6,6 @@ edition = "2018"
 
 [dependencies]
 synth = "0.11.0"
-portaudio = "0.6.3"
+portaudio = "0.7.0"
 pitch_calc = "0.11.0"
 sample = "0.6.0"

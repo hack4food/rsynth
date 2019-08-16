@@ -4,6 +4,7 @@
 //! Bencina.
 
 extern crate portaudio;
+extern crate rsynth_data_import as rdimport;
 
 use portaudio as pa;
 use std::f64::consts::PI;
@@ -15,17 +16,33 @@ const FRAMES_PER_BUFFER: u32 = 64;
 
 fn main() {
     match run() {
-        Ok(_) => {},
+        Ok(_) => {}
         e => {
             eprintln!("Example failed with the following: {:?}", e);
         }
     }
 }
 
+trait MonoSample {
+    fn value_at(&self, idx: f32) -> f32;
+}
+
 struct Wavetable {
     data: Vec<f32>,
-    right_phase: u32,
-    left_phase: u32,
+}
+
+impl MonoSample for rdimport::WaveData {
+    fn value_at(&self, idx: f32) -> f32 {
+        let data_pos = (idx * self.len() as f32) as usize % self.len();
+        self[data_pos].1 as f32
+    }
+}
+
+impl MonoSample for Wavetable {
+    fn value_at(&self, idx: f32) -> f32 {
+        let data_pos = (idx * self.data.len() as f32) as usize % self.data.len();
+        self.data[data_pos as usize]
+    }
 }
 
 impl Wavetable {
@@ -34,55 +51,52 @@ impl Wavetable {
         for i in 0..table_size {
             sine.push((i as f64 / table_size as f64 * PI * 2.0).sin() as f32);
         }
-        Wavetable {
-            data: sine,
-            right_phase: 0,
-            left_phase: 0,
-        }
-    }
-
-    fn get_next_and_step(&mut self) -> (f32, f32) { // orz, refactor to come
-        self.left_phase += 1;
-        self.right_phase += 3;
-
-        let table_size = self.data.len() as u32;
-        if self.left_phase >= table_size { self.left_phase -= table_size; }
-        if self.right_phase >= table_size { self.right_phase -= table_size; }
-
-        (self.data[self.left_phase as usize], self.data[self.right_phase as usize])
-    }
-
-    fn get_next(&self, pos: usize) -> (f32, f32) { // orz, refactor to come
-        let left_phase = (1 * pos) % self.data.len();
-        let right_phase = (3 * pos) % self.data.len();
-        (self.data[left_phase], self.data[right_phase])
+        Wavetable { data: sine }
     }
 }
 
 fn run() -> Result<(), pa::Error> {
-
-    println!("PortAudio Test: output sine wave. SR = {}, BufSize = {}", SAMPLE_RATE, FRAMES_PER_BUFFER);
+    println!(
+        "PortAudio Test: output sine wave. SR = {}, BufSize = {}",
+        SAMPLE_RATE, FRAMES_PER_BUFFER
+    );
 
     // Initialise sinusoidal wavetable.
-    let mut wavetable = Wavetable::new(200);
+    let wavetable = if true {
+        Box::new(rdimport::load_csv_data("../rsynth-data-import/asset/data.csv".as_ref()).unwrap())
+            as Box<MonoSample>
+    } else {
+        Box::new(Wavetable::new(200)) as Box<MonoSample>
+    };
 
     let pa = pa::PortAudio::new()?;
 
-    let mut settings = pa.default_output_stream_settings(CHANNELS, SAMPLE_RATE, FRAMES_PER_BUFFER)?;
+    let mut settings =
+        pa.default_output_stream_settings(CHANNELS, SAMPLE_RATE, FRAMES_PER_BUFFER)?;
     // we won't output out of range samples so don't bother clipping them.
     settings.flags = pa::stream_flags::CLIP_OFF;
+
+    let pitch = 220.;
+    // TODO: math this correctly ((???))
+    let samples_per_period = SAMPLE_RATE * pitch;
+    let mut play_position = 0.;
+    let mut idx = 0;
 
     // This routine will be called by the PortAudio engine when audio is needed. It may called at
     // interrupt level on some machines so don't do anything that could mess up the system like
     // dynamic resource allocation or IO.
     let callback = move |pa::OutputStreamCallbackArgs { buffer, frames, .. }| {
-        // TODO: implement logic in order to handle wrapping around the table properly
         let mut idx = 0;
         for frame in 0..frames {
-            let (left, right) = /*wavetable.get_next(frame); */ wavetable.get_next_and_step();
-            buffer[idx]   = left;
-            buffer[idx+1] = right;
+            // TODO: math this more correcterer as well
+            // play_position += (1. / frames as f32) * samples_per_period as f32;
+            play_position += 0.000625;
+            play_position %= 1.;
 
+            let sample = wavetable.value_at(play_position);
+
+            buffer[idx] = sample;
+            buffer[idx + 1] = sample;
             idx += 2;
         }
         pa::Continue

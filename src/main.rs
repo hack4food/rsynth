@@ -32,11 +32,35 @@ struct Wavetable {
 }
 
 impl MonoSample for rdimport::WaveData {
+    // fn value_at(&self, idx: f32) -> f32 {
+    //     let data_pos = (idx * self.len() as f32) as usize % self.len();
+    //     self[data_pos].1 as f32
+    // }
+
     fn value_at(&self, idx: f32) -> f32 {
-        let data_pos = (idx * self.len() as f32) as usize % self.len();
-        self[data_pos].1 as f32
+        match self.binary_search_by_key(&idx, |&(time, amp)| time) {
+            Ok(target_idx) => self.get(target_idx).unwrap().1 as _,
+            Err(right_idx) => lerp_with_index(self, right_idx),
+        }
     }
 }
+
+fn lerp_with_index(table: &rdimport::WaveData, right_idx: usize) -> f32 {
+    let left_frame = if right_idx == 0 {
+let left_idx =         table.len() - 1;
+     table.get(left_idx).unwrap().map(|(t, a)| t+1);
+
+    } else {
+let left_idx =        right_idx - 1;
+table.get(left_idx).unwrap()
+    };
+
+    let right_frame = table.get(right_idx).unwrap();
+
+    lerp_frames(left_frame, right_frame)
+}
+
+fn lerp_frames(())
 
 impl MonoSample for Wavetable {
     fn value_at(&self, idx: f32) -> f32 {

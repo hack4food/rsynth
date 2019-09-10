@@ -40,27 +40,41 @@ impl MonoSample for rdimport::WaveData {
     fn value_at(&self, idx: f32) -> f32 {
         match self.binary_search_by_key(&idx, |&(time, amp)| time) {
             Ok(target_idx) => self.get(target_idx).unwrap().1 as _,
-            Err(right_idx) => lerp_with_index(self, right_idx),
+            Err(right_idx) => lerp_with_index(self, idx, right_idx),
         }
     }
 }
 
-fn lerp_with_index(table: &rdimport::WaveData, right_idx: usize) -> f32 {
+fn lerp_with_index(table: &rdimport::WaveData, target_idx: f32, right_idx: usize) -> f32 {
     let left_frame = if right_idx == 0 {
-let left_idx =         table.len() - 1;
-     table.get(left_idx).unwrap().map(|(t, a)| t+1);
-
+        let left_idx = table.len() - 1;
+        table
+            .get(left_idx)
+            .map(|(t, a)| (t + 1., a.clone()))
+            .unwrap()
     } else {
-let left_idx =        right_idx - 1;
-table.get(left_idx).unwrap()
+        let left_idx = right_idx - 1;
+        table.get(left_idx).unwrap().clone()
     };
 
     let right_frame = table.get(right_idx).unwrap();
 
-    lerp_frames(left_frame, right_frame)
+    lerp_frames(target_idx, left_frame, *right_frame)
 }
 
-fn lerp_frames(())
+fn lerp_frames(
+    target_idx: f32,
+    left_frame: rdimport::WaveFrame,
+    right_frame: rdimport::WaveFrame,
+) -> f32 {
+    (if left_frame.0 == right_frame.0 {
+        left_frame.1
+    } else {
+        let amp_range = right_frame.1 - right_frame.1;
+        let time_range = right_frame.0 - left_frame.0;
+        left_frame.1 + (target_idx as f64 - left_frame.0) * (amp_range / time_range)
+    }) as f32
+}
 
 impl MonoSample for Wavetable {
     fn value_at(&self, idx: f32) -> f32 {
